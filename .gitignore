@@ -221,3 +221,9 @@ __marimo__/
 
 # Data
 data/
+# MLflow (local experiment tracking + model registry)
+mlflow.db
+mlruns/
+
+# macOS
+.DS_Store
