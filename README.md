@@ -26,13 +26,13 @@ flowchart LR
     GW -.failover.-> OLL[Ollama<br/>local model]
 
     D[Policies, README,<br/>NHTSA recalls] --> KB[(Knowledge base<br/>pgvector)]
+    KB --> ASK[POST /ask<br/>answers with citations]
+    ASK --> GW
 
     subgraph planned [Planned]
-        RAG[RAG answers<br/>+ text-to-SQL agent]
+        SQL[Text-to-SQL agent<br/>+ router]
         EV[Eval gate in CI]
     end
-    KB -.-> RAG
-    GW -.-> RAG
 ```
 
 ## Data model
@@ -132,6 +132,29 @@ Pipeline ([`rag/`](rag/)):
 
 Re-running the ingest replaces documents instead of duplicating them. Tests use a fake embedder and roll back their transaction, so they need no model and never touch the real knowledge base.
 
+## RAG answers (`POST /ask`)
+
+[`rag/answer.py`](rag/answer.py) runs an "open-book exam" for every question:
+
+1. **Search** the knowledge base for the 5 most similar chunks.
+2. **Relevance check:** if even the best chunk is below `RAG_MIN_SIMILARITY`, answer *"I don't know"* **without calling the LLM** (no guessing, no cost).
+3. **Prompt** the LLM with the numbered sources and strict rules: use only these sources, cite them as [1], [2], say "I don't know" otherwise.
+4. **Answer** through the LLM gateway (retries, failover and cost logging included).
+5. **Citation check:** keep only source numbers that really exist; `answered_from_sources` is false when nothing valid was cited.
+
+The response contains the answer, the cited source numbers, every source shown to the model (title, link, similarity), tokens, cost and the time spent on search vs. the LLM.
+
+**Real results** (Gemini `gemini-3.1-flash-lite`, local `nomic-embed-text`):
+
+| Question | Answer (shortened) | Top source (similarity) |
+|---|---|---|
+| What is FleetPilot? | "An LLMOps/MLOps platform for fleet telemetry [1]..." | README (0.75) |
+| What should a driver do after an ENGINE_OVERHEAT warning? | Stop safely, don't open the radiator cap while hot, wait 30 min, call the depot [1][2][3] | Engine overheating policy (0.83) |
+| Are there brake recalls for Isuzu trucks? | Recall 20V193000 (rear brake line clips) and 18V235000 (brake switch) [1][2][3] | NHTSA recall 20V193000 (0.83) |
+| What is the best ramen in Shibuya? | "I don't know. The FleetPilot documents don't cover this question." (no LLM call) | 0.43, below the 0.5 threshold |
+
+**Before RAG**, asked "What is FleetPilot?", the same LLMs answered "a GPS navigation system", "flight-planning software for aircraft" and "autonomous-driving software". On-topic questions score 0.75 to 0.83 and the off-topic one 0.43, so the 0.5 threshold separates them with a clear margin.
+
 ## API
 
 | Endpoint | Description |
@@ -144,6 +167,7 @@ Re-running the ingest replaces documents instead of duplicating them. Tests use 
 | `GET /scania/vehicles/{id}/failure-risk` | failure probability within 48 steps, `at_risk` flag, model version (`503` if no model trained yet) |
 | `POST /llm/chat` | ask the LLM through the gateway; returns answer, provider, tokens, cost, latency, attempts (`503` all providers failed, `429` budget reached) |
 | `GET /llm/usage` | calls, errors, average latency, tokens and cost per provider in the last 24 h |
+| `POST /ask` | answer a question from FleetPilot's documents with citations; *"I don't know"* when the documents don't cover it |
 
 All queries use parameter binding (no SQL injection). Interactive docs at `http://localhost:8000/docs`.
 
@@ -179,6 +203,7 @@ ollama pull nomic-embed-text                        # local embedding model
 python scripts/download_nhtsa_recalls.py            # real recall notices -> data/docs/
 python -m rag.ingest                                # chunk + embed + store in pgvector
 python -m rag.search "how often should brake pads be checked?"
+# then try POST /ask at http://localhost:8000/docs
 ```
 
 Predictive maintenance (needs the Scania download, ~1.5 GB):
@@ -218,7 +243,7 @@ tests/          API, data-quality, ML-feature and LLM-gateway tests (pytest)
 - [x] LLM gateway: multiple providers, retries, timeouts, failover, circuit breaker, budget guard, token and cost logging
 - [x] CI: GitHub Actions runs all tests on every pull request
 - [x] Knowledge base: policies + NHTSA recalls, chunked, embedded locally, stored in pgvector
-- [ ] RAG answers with citations
+- [x] RAG answers with citations and an "I don't know" guard
 - [ ] Text-to-SQL agent + router (documents vs. database)
 - [ ] Evaluation: golden Q&A set + LLM-as-judge, run as a quality gate in GitHub Actions
 - [ ] Docker + deployment

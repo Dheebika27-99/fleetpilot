@@ -19,6 +19,9 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # ---- RAG ----------------------------------------------------------------------
 # Local embedding model in Ollama (free, no key): ollama pull nomic-embed-text
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+# If even the best document chunk is less similar than this, answer "I don't know"
+# without calling the LLM. Tune it by trying on-topic and off-topic questions.
+RAG_MIN_SIMILARITY = float(os.getenv("RAG_MIN_SIMILARITY", "0.5"))
 
 # Provider order = failover order. First one is tried first.
 LLM_PROVIDER_ORDER = [p.strip() for p in os.getenv("LLM_PROVIDER_ORDER", "gemini,ollama").split(",") if p.strip()]
