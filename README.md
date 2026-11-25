@@ -1,9 +1,11 @@
 # FleetPilot
 
+![CI](https://github.com/Dheebika27-99/fleetpilot/actions/workflows/ci.yml/badge.svg)
+
 **An LLMOps / MLOps platform for fleet telemetry.**
 Fleet managers ask questions about their vehicles in plain language ("Which trucks had engine warnings last week?"), and FleetPilot answers from live telemetry data and maintenance documents. Around the chatbot sits the production platform: data-quality gates, an API, model tracking, an LLM gateway with failover and cost logging, automated evaluation, CI/CD and monitoring.
 
-> Status: **work in progress**. Data layer, data-quality checks, API, and a predictive-maintenance model trained on **real Scania truck data** (tracked in MLflow) are done. See the [roadmap](#roadmap).
+> Status: **work in progress**. Data layer, data-quality checks, API, a predictive-maintenance model trained on **real Scania truck data** (tracked in MLflow), an **LLM gateway** with failover and cost logging, and **CI** are done. See the [roadmap](#roadmap).
 
 ---
 
@@ -19,12 +21,15 @@ flowchart LR
 
     S[Scania Component X<br/>real truck data] --> F[Features + labels] --> PM[Failure-risk model<br/>MLflow registry] --> API
 
+    API --> GW[LLM gateway<br/>retries, failover,<br/>cost logging]
+    GW --> GEM[Gemini<br/>cloud]
+    GW -.failover.-> OLL[Ollama<br/>local model]
+
     subgraph planned [Planned]
-        LLM[LLM gateway<br/>failover + cost logging]
         RAG[RAG over manuals<br/>+ text-to-SQL agent]
         EV[Eval gate in CI]
     end
-    API -.-> LLM -.-> RAG
+    GW -.-> RAG
 ```
 
 ## Data model
@@ -87,6 +92,25 @@ Only about 2.7% of trucks fail within the window, so PR-AUC is the honest metric
 
 Full numbers: `data/scania/processed/last_training_report.json` after training, or the MLflow UI.
 
+## LLM gateway
+
+One front door to several LLM providers ([`app/llm/`](app/llm/)). Every request:
+
+1. **Budget guard**: refuses new calls once today's spending reaches `LLM_DAILY_BUDGET_USD` (HTTP 429).
+2. **Providers in order** (`LLM_PROVIDER_ORDER`, default Gemini → Ollama).
+3. **Timeout** on every call.
+4. **Retries with exponential backoff** only for errors that can recover (timeout, HTTP 429, 5xx); a bad key or bad request moves on immediately.
+5. **Failover** to the next provider when one gives up.
+6. **Circuit breaker**: after 3 failures in a row a provider is skipped for 60 s instead of being hammered.
+7. **Logging** of every attempt to the `llm_calls` table: provider, model, input/output tokens, latency, cost, status, error. `GET /llm/usage` summarises it.
+
+| Provider | Runs | Key | Role |
+|---|---|---|---|
+| Google Gemini | cloud | `GEMINI_API_KEY` in `.env` | main |
+| Ollama (`llama3.2`) | locally | none | backup, free, works offline |
+
+API keys live only in `.env` (git-ignored) and are sent in a header, never in a URL or a log. The gateway is tested with **fake providers** that simulate timeouts, rate limits and bad keys, so the tests need no key and no internet.
+
 ## API
 
 | Endpoint | Description |
@@ -97,6 +121,8 @@ Full numbers: `data/scania/processed/last_training_report.json` after training, 
 | `GET /vehicles/{id}/warnings` | warnings for a vehicle, `open_only=true` for unresolved |
 | `GET /scania/vehicles` | Scania trucks that can be scored |
 | `GET /scania/vehicles/{id}/failure-risk` | failure probability within 48 steps, `at_risk` flag, model version (`503` if no model trained yet) |
+| `POST /llm/chat` | ask the LLM through the gateway; returns answer, provider, tokens, cost, latency, attempts (`503` all providers failed, `429` budget reached) |
+| `GET /llm/usage` | calls, errors, average latency, tokens and cost per provider in the last 24 h |
 
 All queries use parameter binding (no SQL injection). Interactive docs at `http://localhost:8000/docs`.
 
@@ -117,6 +143,14 @@ pytest                                  # 4. run the tests
 uvicorn app.main:app --reload           # 5. start the API → http://localhost:8000/docs
 ```
 
+LLM gateway (needs a free Gemini key and/or [Ollama](https://ollama.com)):
+
+```bash
+ollama pull llama3.2                    # local backup model
+# put GEMINI_API_KEY=... in .env (see .env.example)
+uvicorn app.main:app --reload           # then try POST /llm/chat at http://localhost:8000/docs
+```
+
 Predictive maintenance (needs the Scania download, ~1.5 GB):
 
 ```bash
@@ -131,11 +165,13 @@ Example questions answered in SQL: [`sql/business_queries.sql`](sql/business_que
 
 ```
 app/            FastAPI service (config, db connection, schemas, routes, predictions)
+app/llm/        LLM gateway: providers, retries, failover, circuit breaker, cost logging
 ml/             Scania features, labels, training, MLflow tracking + registry
 db/             schema, CSV load (psql), clean-layer views
 scripts/        data generator, Python loader, data-quality checks
 sql/            business questions in SQL
-tests/          API + data-quality tests (pytest)
+tests/          API, data-quality, ML-feature and LLM-gateway tests (pytest)
+.github/        GitHub Actions: fresh Postgres → load data → run all tests on every PR
 ```
 
 ## Roadmap
@@ -147,11 +183,12 @@ tests/          API + data-quality tests (pytest)
 - [x] Predictive-maintenance model on real Scania truck data + MLflow tracking, registry and promotion gate
 - [x] Failure-risk endpoint serving the champion model
 - [ ] Real driving telemetry (Vehicle Energy Dataset) for the chatbot
-- [ ] LLM gateway: multiple providers, retries, timeouts, failover, token and cost logging
+- [x] LLM gateway: multiple providers, retries, timeouts, failover, circuit breaker, budget guard, token and cost logging
+- [x] CI: GitHub Actions runs all tests on every pull request
 - [ ] RAG over vehicle manuals and recall data (pgvector)
 - [ ] Text-to-SQL agent + router (documents vs. database)
 - [ ] Evaluation: golden Q&A set + LLM-as-judge, run as a quality gate in GitHub Actions
-- [ ] Docker + CI/CD
+- [ ] Docker + deployment
 - [ ] Tracing and cost dashboard, drift monitoring, AWS (Terraform), Kubernetes
 
 ## Data and credits

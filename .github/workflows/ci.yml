@@ -1,0 +1,52 @@
+# Runs on every push and pull request: build a fresh database, load the data, run all tests.
+# No API keys needed: LLM tests use fake providers.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:                       # a throwaway Postgres just for this run
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fleetpilot
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fleetpilot
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate synthetic fleet data
+        run: python scripts/generate_data.py
+
+      - name: Create tables and load data
+        run: python scripts/load_db.py
+
+      - name: Data-quality report (expected to find the planted issues)
+        run: python scripts/check_data_quality.py || true
+
+      - name: Run tests
+        run: pytest -q
