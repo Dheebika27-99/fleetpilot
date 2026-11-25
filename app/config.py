@@ -12,9 +12,13 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/fleetpilot
 # ---- LLM gateway -------------------------------------------------------------
 # Secrets live ONLY in .env (git-ignored). Never hard-code a key.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")   # any model name shown in AI Studio
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")   # check yours: python scripts/check_gemini_models.py
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+
+# ---- RAG ----------------------------------------------------------------------
+# Local embedding model in Ollama (free, no key): ollama pull nomic-embed-text
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 
 # Provider order = failover order. First one is tried first.
 LLM_PROVIDER_ORDER = [p.strip() for p in os.getenv("LLM_PROVIDER_ORDER", "gemini,ollama").split(",") if p.strip()]
