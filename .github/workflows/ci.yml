@@ -13,7 +13,7 @@ jobs:
 
     services:
       postgres:                       # a throwaway Postgres just for this run
-        image: postgres:16
+        image: pgvector/pgvector:pg16   # Postgres 16 + the pgvector extension (for RAG)
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
