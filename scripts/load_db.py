@@ -8,6 +8,7 @@ Steps:
   1. run db/schema.sql       (drop + create the 5 tables)
   2. COPY each CSV in data/  (parents first, because of the foreign keys)
   3. run db/clean_views.sql  (the clean layer)
+  4. run db/llm_schema.sql   (LLM call log table, created only if missing)
 
 Run:  python scripts/generate_data.py   # makes the CSVs
       python scripts/load_db.py         # loads them
@@ -51,6 +52,7 @@ def main():
         for table in TABLES:
             copy_csv(conn, table)
         run_sql_file(conn, ROOT / "db" / "clean_views.sql")
+        run_sql_file(conn, ROOT / "db" / "llm_schema.sql")   # LLM call log (kept between reloads)
     print("Done.")
 
 

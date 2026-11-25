@@ -227,3 +227,6 @@ mlruns/
 
 # macOS
 .DS_Store
+
+# Personal notes / PDFs (not part of the project)
+Claude outputs/

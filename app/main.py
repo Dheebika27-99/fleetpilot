@@ -13,15 +13,17 @@ from fastapi.responses import JSONResponse
 
 from app.config import DATABASE_URL
 from app.db import get_conn
+from app.llm.router import router as llm_router
 from app.prediction import router as prediction_router
 from app.schemas import Health, Vehicle, Warning
 
 app = FastAPI(
     title="FleetPilot API",
-    description="Fleet telemetry API: vehicles, warnings, failure-risk predictions and (soon) chat.",
-    version="0.2.0",
+    description="Fleet telemetry API: vehicles, warnings, failure-risk predictions and an LLM gateway.",
+    version="0.3.0",
 )
 app.include_router(prediction_router)
+app.include_router(llm_router)
 
 # The API reads from the CLEAN layer (views), never from raw sensor tables.
 VEHICLE_COLUMNS = """
