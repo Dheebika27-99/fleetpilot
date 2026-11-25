@@ -144,6 +144,17 @@ Re-running the ingest replaces documents instead of duplicating them. Tests use 
 
 The response contains the answer, the cited source numbers, every source shown to the model (title, link, similarity), tokens, cost and the time spent on search vs. the LLM.
 
+**Real results** (Gemini `gemini-3.1-flash-lite`, local `nomic-embed-text`):
+
+| Question | Answer (shortened) | Top source (similarity) |
+|---|---|---|
+| What is FleetPilot? | "An LLMOps/MLOps platform for fleet telemetry [1]..." | README (0.75) |
+| What should a driver do after an ENGINE_OVERHEAT warning? | Stop safely, don't open the radiator cap while hot, wait 30 min, call the depot [1][2][3] | Engine overheating policy (0.83) |
+| Are there brake recalls for Isuzu trucks? | Recall 20V193000 (rear brake line clips) and 18V235000 (brake switch) [1][2][3] | NHTSA recall 20V193000 (0.83) |
+| What is the best ramen in Shibuya? | "I don't know. The FleetPilot documents don't cover this question." (no LLM call) | 0.43, below the 0.5 threshold |
+
+**Before RAG**, asked "What is FleetPilot?", the same LLMs answered "a GPS navigation system", "flight-planning software for aircraft" and "autonomous-driving software". On-topic questions score 0.75 to 0.83 and the off-topic one 0.43, so the 0.5 threshold separates them with a clear margin.
+
 ## API
 
 | Endpoint | Description |
